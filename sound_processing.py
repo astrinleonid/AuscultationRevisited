@@ -17,6 +17,7 @@ def combine_wav_files(output_file, input_files):
     print(params)
 
     # Open the output file with the parameters from the first file
+    print(f"Open output file {output_file}")
     with wave.open(output_file, 'wb') as outfile:
         outfile.setparams(params)
 

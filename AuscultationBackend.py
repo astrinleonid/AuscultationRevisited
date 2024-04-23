@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
+
 import os
 from werkzeug.utils import secure_filename
 import librosa  # You might need to install this library for handling audio files
@@ -33,15 +34,19 @@ class Record:
         self.files = []
         self.save_folder = save_folder
         self.tmp_folder = f"{self.save_folder}/TMP{self.id}"
+        self.sound_folder = f"{self.save_folder}/{self.id}"
         self.model = model
         self.brand = brand
+        self.active_point = 0
 
     def point_data_reset(self):
+        clear_folder(self.tmp_folder)
         self.chunks = []
         self.chunk_quality = []
+        self.active_point = 0
 
     def get_filename(self, point_number, sep = 'point'):
-        return f"record{date.today()}ID{self.id}{sep}{point_number}.wav"
+        return f"{self.id}{sep}{point_number}.wav"
 
     def get_good_subseq_ind(self, subs_len):
         ones = ''.join(['1' for i in range(subs_len)])
@@ -62,11 +67,15 @@ class Record:
         start, end = self.get_good_subseq_ind(subs_len)
         files_to_combine = self.chunks[start : end]
         filename = self.get_filename(point_number)
-        save_file_path = os.path.join(self.save_folder, filename)
+        save_file_path = os.path.join(self.sound_folder, filename)
         self.files.append((save_file_path))
         combine_wav_files(save_file_path, files_to_combine)
-        clear_folder(self.tmp_folder)
         self.point_data_reset()
+
+    def save_metadata(self, string):
+        file_path = f"{self.sound_folder}/meta.txt"
+        with open (file_path, "w") as file:
+            file.write(string)
 
 records = {}
 
@@ -82,13 +91,15 @@ def get_unique_id():
     maker = data.get('maker')
     model = data.get('model')
 
-    print(f"Maker: {maker}, Model: {model}")  # Print maker and model
+    metadata_string = f"Date: {date.today()} Maker: {maker} Model: {model}"
+    print(metadata_string)  # Print maker and model
 
     # Generate a unique ID - here, we use a UUID for simplicity
     unique_id = generate_ID(6)
     record = Record(unique_id)
     records[unique_id] = record
-    os.makedirs(record.tmp_folder, exist_ok=True)
+    os.makedirs(record.sound_folder, exist_ok=True)
+    record.save_metadata(metadata_string)
     print(f"ID generated: {unique_id}")
 
     return jsonify(unique_id)
@@ -106,33 +117,41 @@ def upload_file():
         processing_started -= 1
         return jsonify({"error": "No file part"}), 400
     file = request.files.get('file')
-    button_number = request.form.get('button_number')
+    button_number = int(request.form.get('button_number'))
     ID = request.form.get('record_id').strip().strip('"')
 
     if ID not in records:
-        record = Record(ID)
-        records[ID] = record
-        tmp_dir_path = record.tmp_folder
-        print(f"New record created, tmp folder {tmp_dir_path}")
-        os.makedirs(tmp_dir_path, exist_ok=True)
+        print("Error: referring to non-existant ID")
+        return jsonify({"error": "No record created for ID"}), 400
     else:
         record = records[ID]
         print(f"Record exists, tmp folder {record.tmp_folder}")
+
+    os.makedirs(record.tmp_folder, exist_ok=True)
+
+    if button_number != record.active_point:
+        print(f"Button number mismatch, waiting for the previous cycle to conclude {button_number}, {record.active_point}")
+        while record.active_point > 0:
+            time.sleep(0.01)
+        record.active_point = button_number
+    else:
+        print(f"Continuing with button No {button_number}")
 
     record_quality = '1' if record.num_chunks() > 3 else '0'
     print(f"request received ID {ID} button {button_number} response {record_quality}")
     # If the user does not select a file, the browser submits an empty file without a filename
     if file.filename == '':
         processing_started -= 1
+        print("error: No selected file")
         return jsonify({"error": "No selected file"}), 400
     if file and allowed_file(file.filename):
         # filename = secure_filename(file.filename)
-        filename = f"record{date.today()}ID{ID}no{len(record.chunks)}"
+        filename = f"{ID}No{len(record.chunks)}"
         save_path = os.path.join(records[ID].tmp_folder, filename + ".wav")
         file.save(save_path)
         extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
         record.chunks.append(save_path)
-
+        print(f"Chunk saved {save_path} , num_chunks {record.num_chunks()}")
         record.chunk_quality.append(record_quality)
         if record.check_sucsess():
             processing_started -= 1
@@ -146,7 +165,8 @@ def upload_file():
 
 @app.route('/save_record', methods=['POST'])
 def save_record():
-    button_number = request.form.get('button_number')
+    message = "Point recording completed. "
+    button_number = int(request.form.get('button_number'))
     ID = request.form.get('record_id').strip().strip('"')
     print(f"Saving record to the database, ID {ID} point {button_number}")
     if ID not in records:
@@ -154,8 +174,34 @@ def save_record():
     record = records[ID]
     while processing_started > 0:
         time.sleep(0.1)
-    record.combine_wav_from_tmp(button_number)
-    return jsonify({"message": "Record saved successfully"}), 200
+    if (button_number > 0):
+        record.combine_wav_from_tmp(button_number)
+        message += "Record saved successfully"
+    record.point_data_reset()
+    return jsonify({"message": message}), 200
+
+
+@app.route('/get_wav_files', methods=['GET'])
+def get_wav_files():
+    ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
+    record = records[ID]
+    sound_folder = record.sound_folder
+    files = " ".join([f[:-4] for f in os.listdir(sound_folder) if f[-3:] == 'wav'])
+    return(files)
+
+
+@app.route('/file_download', methods=['GET'])
+def download_file():
+    folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
+    fileName = request.args.get('fileName', default='default_filename').strip().strip('"') + '.wav'
+    record = records[folderId]
+    sound_folder = record.sound_folder
+    print(f"Playing {fileName} from {sound_folder}")
+
+    try:
+        return send_from_directory(sound_folder, fileName, as_attachment=True)
+    except FileNotFoundError:
+        return "File not found", 404
 
 def process_file(file_path):
     """Simple processing function to check if the audio is longer than 5 seconds."""

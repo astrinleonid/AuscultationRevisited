@@ -93,6 +93,10 @@ def get_unique_id():
 
     return jsonify(unique_id)
 
+@app.route('/checkConnection', methods=['GET'])  # Change to POST to accept data
+def connectionOK():
+    return jsonify("OK")
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global processing_started

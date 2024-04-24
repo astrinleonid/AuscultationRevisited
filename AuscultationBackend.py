@@ -40,10 +40,13 @@ class Record:
         self.active_point = 0
 
     def point_data_reset(self):
+
         clear_folder(self.tmp_folder)
         self.chunks = []
         self.chunk_quality = []
         self.active_point = 0
+        print(f"Point data cleared , active_point {self.active_point}")
+
 
     def get_filename(self, point_number, sep = 'point'):
         return f"{self.id}{sep}{point_number}.wav"
@@ -168,7 +171,7 @@ def save_record():
     message = "Point recording completed. "
     button_number = int(request.form.get('button_number'))
     ID = request.form.get('record_id').strip().strip('"')
-    print(f"Saving record to the database, ID {ID} point {button_number}")
+    print(f"\n*******************************\nSaving record to the database, ID {ID} point {button_number}")
     if ID not in records:
         return jsonify({"error": "Record not found"}), 400
     record = records[ID]

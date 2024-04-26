@@ -1,0 +1,23 @@
+<!-- templates/list_wav.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WAV Files</title>
+</head>
+<body>
+    <h1>WAV Files List</h1>
+    <ul>
+        {% for file in wav_files %}
+        <li>
+            {{ file }}
+            <!-- HTML5 Audio Player -->
+            <audio controls>
+                <source src="{{ url_for('static', filename='wav/' + file) }}" type="audio/wav">
+                Your browser does not support the audio element.
+            </audio>
+        </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

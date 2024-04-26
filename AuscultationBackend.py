@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, render_template
 
 import os
 from werkzeug.utils import secure_filename
@@ -152,7 +152,9 @@ def upload_file():
         filename = f"{ID}No{len(record.chunks)}"
         save_path = os.path.join(records[ID].tmp_folder, filename + ".wav")
         file.save(save_path)
+        print("Temporary file saved")
         extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
+        print("Features extracted")
         record.chunks.append(save_path)
         print(f"Chunk saved {save_path} , num_chunks {record.num_chunks()}")
         record.chunk_quality.append(record_quality)
@@ -192,6 +194,17 @@ def get_wav_files():
     files = " ".join([f[:-4] for f in os.listdir(sound_folder) if f[-3:] == 'wav'])
     return(files)
 
+@app.route('/get_full_path_to_id/<ID>', methods=['GET'])
+def get_full_path_to_id(ID):
+    # ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
+    record = records[ID]
+    return '/show_wav_files/' + record.sound_folder
+
+
+@app.route('/show_wav_files/<folder>')
+def show_wav_files(folder):
+    wav_files = [f for f in os.listdir(folder) if f.endswith('.wav')]
+    return render_template('list_wav.html', wav_files=wav_files)
 
 @app.route('/file_download', methods=['GET'])
 def download_file():
@@ -203,6 +216,20 @@ def download_file():
 
     try:
         return send_from_directory(sound_folder, fileName, as_attachment=True)
+    except FileNotFoundError:
+        return "File not found", 404
+
+@app.route('/file_delete', methods=['GET'])
+def delete_file():
+    folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
+    fileName = request.args.get('fileName', default='default_filename').strip().strip('"') + '.wav'
+    record = records[folderId]
+    sound_folder = record.sound_folder
+    print(f"Deleting {fileName} from {sound_folder}")
+
+    try:
+        os.remove(sound_folder + '/' + fileName)
+        return "File deleted", 200
     except FileNotFoundError:
         return "File not found", 404
 

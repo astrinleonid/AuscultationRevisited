@@ -1,4 +1,6 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template
+import qrcode
+from io import BytesIO
+from flask import Flask, request, jsonify, send_from_directory, render_template, send_file
 
 import os
 from werkzeug.utils import secure_filename
@@ -198,14 +200,26 @@ def get_wav_files():
 def get_full_path_to_id(ID):
     # ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
     record = records[ID]
-    return '/show_wav_files?' + record.sound_folder
+    http_address =  'http://' + request.host + '/show_wav_files?folderId=' + record.sound_folder
+
+    img = qrcode.make(http_address)
+    img_byte_arr = BytesIO()
+    img.save(img_byte_arr)
+    img_byte_arr.seek(0)
+
+    # Send the bytes stream as a file response with MIME type for PNG images
+    return send_file(img_byte_arr, mimetype='image/png')
+    # Importing library
+
+
+
 
 
 @app.route('/show_wav_files')
 def show_wav_files():
-    ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    wav_files = [f for f in os.listdir(ID) if f.endswith('.wav')]
-    return render_template('list_wav.html', wav_files=wav_files)
+    folderId = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
+    wav_files = [f for f in os.listdir(folderId) if f.endswith('.wav')]
+    return render_template('list_wav.html', wav_files=wav_files, folderId = folderId)
 
 @app.route('/file_download', methods=['GET'])
 def download_file():
@@ -233,6 +247,11 @@ def delete_file():
         return "File deleted", 200
     except FileNotFoundError:
         return "File not found", 404
+
+# @app.route("/")
+# def view():
+#     return request.host, 200
+
 
 def process_file(file_path):
     """Simple processing function to check if the audio is longer than 5 seconds."""

@@ -198,12 +198,13 @@ def get_wav_files():
 def get_full_path_to_id(ID):
     # ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
     record = records[ID]
-    return '/show_wav_files/' + record.sound_folder
+    return '/show_wav_files?' + record.sound_folder
 
 
-@app.route('/show_wav_files/<folder>')
-def show_wav_files(folder):
-    wav_files = [f for f in os.listdir(folder) if f.endswith('.wav')]
+@app.route('/show_wav_files')
+def show_wav_files():
+    ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
+    wav_files = [f for f in os.listdir(ID) if f.endswith('.wav')]
     return render_template('list_wav.html', wav_files=wav_files)
 
 @app.route('/file_download', methods=['GET'])

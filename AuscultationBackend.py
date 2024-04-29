@@ -205,7 +205,7 @@ def upload_file():
         print(f"Continuing with button No {button_number} point record ID {pointID}")
 
 
-    record_quality = '1' if record.num_chunks() > 3 else '0'
+    record_quality = '1' if record.num_chunks() > 5 else '0'
     print(f"request received ID {ID} button {button_number} response {record_quality}")
     # If the user does not select a file, the browser submits an empty file without a filename
     if file.filename == '':
@@ -239,26 +239,29 @@ def upload_file():
 
 @app.route('/save_record', methods=['POST'])
 def save_record():
-
+    message = "Undefined"
     ID = request.form.get('record_id').strip().strip('"')
     if ID not in records:
         return jsonify({"error": "Record not found"}), 400
     record = records[ID]
     record.reset_pointRecordProcessId()
-
-    message = "Point recording completed. "
-    button_number = int(request.form.get('button_number'))
-    print(f"\n****************\nSaving record to the database, ID {ID} point {button_number}")
-
-    if record.requestsInProcess > 0:
-        print(f"Waiting for {record.requestsInProcess} processes to conclude")
-        # while processing_started > 0:
-        #     time.sleep(0.1)
-        # print("All processes ready, continuing")
-    if (button_number > 0):
-        record.combine_wav_from_tmp(button_number)
-        message += "Record saved successfully"
+    result = request.form.get('result').strip().strip('"')
+    print(f"\n****************\nSaving request result {result}")
+    if result == "success":
+        message = "Point recording completed. "
+        button_number = int(request.form.get('button_number'))
+        print(f"\n****************\nSaving record to the database, ID {ID} point {button_number}")
+        if (button_number > 0):
+            record.combine_wav_from_tmp(button_number)
+            message += "Record saved successfully"
+        else:
+            message = "Wrong button number, record not saved"
+    elif result == "abort":
+        message = "Record aborted"
+    elif result == "timeout":
+        message = "Record unsuccessfull"
     record.point_data_reset()
+    print(f"Recording activity completed with the result {message}")
     return jsonify({"message": message}), 200
 
 
@@ -287,8 +290,8 @@ def get_full_path_to_id(ID):
 
 @app.route('/show_wav_files')
 def show_wav_files():
-    folderId = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    folder = os.path.join(UPLOAD_FOLDER, folderId)
+    folder = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
+    # folder = os.path.join(UPLOAD_FOLDER, folder)
     wav_files = [f[:-4] for f in os.listdir(folder) if f.endswith('.wav')]
     metafile = os.path.join(folder, 'meta.json')
     with open(metafile) as file:

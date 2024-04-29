@@ -116,9 +116,12 @@ class Record:
         else:
             data = {}
 
+        entries_to_pop = []
         for entry in dict:
             if entry in data:
                 data[entry] = dict[entry]
+                entries_to_pop.append(entry)
+        for entry in entries_to_pop:
                 dict.pop(entry)
 
         data.update(dict)
@@ -162,7 +165,7 @@ def get_unique_id():
     model = data.get('model')
     print(data)
 
-    metadata = {"Date": str(date.today()), "Maker" : maker, "Model": model}
+    metadata = {"Date": str(date.today()), "Maker" : maker, "Model": model, "Comment": ""}
     print(metadata)
 
     # Generate a unique ID - here, we use a UUID for simplicity
@@ -391,6 +394,8 @@ def get_button_colors():
         return jsonify({"error": "Record not found"}), 400
     record = records[ID]
     return jsonify(record.get_recorded_point_numbers())
+
+
 
 
 # @app.route("/")

@@ -3,6 +3,7 @@ import json
 from io import BytesIO
 from flask import Flask, request, jsonify, send_from_directory, render_template, send_file
 
+import re
 import os
 from werkzeug.utils import secure_filename
 import librosa  # You might need to install this library for handling audio files
@@ -43,6 +44,16 @@ class Record:
         self.active_point = 0
         self.pointRecordProcessId = "0"
         self.requestsInProcess = 0
+        self.recordState = [False for i in range(10)]
+        self.processing_tmp_files = False
+
+    def get_recorded_point_numbers(self):
+        self.recordState = [False for i in range(10)]
+        for filename in os.listdir(self.sound_folder):
+            match = re.search(r"(\d+)\.wav$", filename)
+            if match:
+                self.recordState[int(match.group(1)) - 1] = True # Returns the point number as an integer
+        return self.recordState
 
     def get_pointRecordProcessId(self):
         self.pointRecordProcessId = generate_ID(4)
@@ -51,11 +62,10 @@ class Record:
     def reset_pointRecordProcessId(self):
         self.pointRecordProcessId = "0"
     def point_data_reset(self):
-
-        clear_folder(self.tmp_folder)
         self.chunks = []
         self.chunk_quality = []
         self.active_point = 0
+        clear_folder(self.tmp_folder)
         print(f"Point data cleared , active_point {self.active_point}")
 
 
@@ -80,11 +90,17 @@ class Record:
             subs_len -= 1
         start, end = self.get_good_subseq_ind(subs_len)
         files_to_combine = self.chunks[start : end]
+        for tmpFile in files_to_combine:
+            if tmpFile.split('/')[-1] not in os.listdir(self.tmp_folder):
+                self.point_data_reset()
+                print(f"ERROR: file not found in the directory {tmpFile.split('/')[-1]}")
+                return False
         filename = self.get_filename(point_number)
         save_file_path = os.path.join(self.sound_folder, filename)
         self.files.append((save_file_path))
         combine_wav_files(save_file_path, files_to_combine)
         self.point_data_reset()
+        return True
 
     def save_metadata(self, string):
         file_path = f"{self.sound_folder}/meta.txt"
@@ -251,9 +267,18 @@ def save_record():
         message = "Point recording completed. "
         button_number = int(request.form.get('button_number'))
         print(f"\n****************\nSaving record to the database, ID {ID} point {button_number}")
+        if record.processing_tmp_files:
+            print("******* DOUBLE CALL ********")
+            return jsonify(message), 200
         if (button_number > 0):
-            record.combine_wav_from_tmp(button_number)
-            message += "Record saved successfully"
+            record.processing_tmp_files = True
+            if record.combine_wav_from_tmp(button_number):
+                record.recordState[button_number - 1] = True
+                message += "Record saved successfully"
+            else:
+                print("Failed to save record")
+                message += "Failed to save"
+            record.processing_tmp_files = False
         else:
             message = "Wrong button number, record not saved"
     elif result == "abort":
@@ -302,7 +327,7 @@ def show_wav_files():
     route_to_file = 'http://' + request.host + '/file_download' + '?folderId=' + folder + '&fileName='
     return render_template('list_wav.html',
                            wav_files=wav_files,
-                           folderId = folderId,
+                           folderId = folder,
                            route_to_file = route_to_file,
                            comment = comment,
                            date = date)
@@ -357,7 +382,15 @@ def delete_record():
     records.pop(ID)
     return jsonify({"OK": "Record deleted successfully"}), 200
 
-
+@app.route('/get_button_states')
+def get_button_colors():
+    ID = request.args.get('record_id')
+    print(ID)
+    ID = ID.strip().strip('"')
+    if ID not in records:
+        return jsonify({"error": "Record not found"}), 400
+    record = records[ID]
+    return jsonify(record.get_recorded_point_numbers())
 
 
 # @app.route("/")

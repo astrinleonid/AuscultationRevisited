@@ -299,7 +299,7 @@ def show_wav_files():
     if "Comment" in metadata:
         comment = metadata["Comment"]
     date = metadata["Date"]
-    route_to_file = 'http://' + request.host + '/file_download' + '?folderId=' + folderId + '&fileName='
+    route_to_file = 'http://' + request.host + '/file_download' + '?folderId=' + folder + '&fileName='
     return render_template('list_wav.html',
                            wav_files=wav_files,
                            folderId = folderId,

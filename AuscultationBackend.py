@@ -46,6 +46,7 @@ class Record:
         self.requestsInProcess = 0
         self.recordState = [False for i in range(10)]
         self.processing_tmp_files = False
+        self.numChunksRequired = 3
 
     def get_recorded_point_numbers(self):
         self.recordState = [False for i in range(10)]
@@ -82,7 +83,8 @@ class Record:
     def quality_string(self):
         return "".join(self.chunk_quality)
     def check_sucsess(self):
-        self.successful = '111' in self.quality_string()
+        crit = "".join(['1' for i in range(self.numChunksRequired)])
+        self.successful = crit in self.quality_string()
         return self.successful
     def combine_wav_from_tmp(self, point_number):
         subs_len = self.num_chunks()
@@ -164,13 +166,14 @@ def get_unique_id():
     maker = data.get('maker')
     model = data.get('model')
     print(data)
-
     metadata = {"Date": str(date.today()), "Maker" : maker, "Model": model, "Comment": ""}
     print(metadata)
 
     # Generate a unique ID - here, we use a UUID for simplicity
 
     record = Record()
+    record.numChunksRequired = int(request.args.get("numChunks"))
+    print(f"Required length of good record set to {record.numChunksRequired}")
     unique_id = record.id
     records[unique_id] = record
     os.makedirs(record.sound_folder, exist_ok=True)

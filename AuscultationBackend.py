@@ -1,4 +1,5 @@
 import qrcode
+import json
 from io import BytesIO
 from flask import Flask, request, jsonify, send_from_directory, render_template, send_file
 
@@ -28,8 +29,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 class Record:
 
-    def __init__(self, id, save_folder = UPLOAD_FOLDER, model = '', brand = ''):
-        self.id = id
+    def __init__(self, save_folder = UPLOAD_FOLDER, model = '', brand = ''):
+        self.id = generate_ID(8)
         self.chunks = []
         self.chunk_quality = []
         self.successful = False
@@ -40,7 +41,15 @@ class Record:
         self.model = model
         self.brand = brand
         self.active_point = 0
+        self.pointRecordProcessId = "0"
+        self.requestsInProcess = 0
 
+    def get_pointRecordProcessId(self):
+        self.pointRecordProcessId = generate_ID(4)
+        return self.pointRecordProcessId
+
+    def reset_pointRecordProcessId(self):
+        self.pointRecordProcessId = "0"
     def point_data_reset(self):
 
         clear_folder(self.tmp_folder)
@@ -82,6 +91,46 @@ class Record:
         with open (file_path, "w") as file:
             file.write(string)
 
+    def update_metadata(self, dict):
+
+        file_path = f"{self.sound_folder}/meta.json"
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+        else:
+            data = {}
+
+        for entry in dict:
+            if entry in data:
+                data[entry] = dict[entry]
+                dict.pop(entry)
+
+        data.update(dict)
+        with open(file_path, 'w') as file:
+            json.dump(data, file)
+
+    def destroy(self):
+        folders = [self.tmp_folder, self.sound_folder]
+        for folder in folders:
+            if os.path.exists(folder):
+                print(f"Clearing folder {folder}")
+                for filename in os.listdir(folder):
+                    file_path = os.path.join(folder, filename)
+                    try:
+                        # Check if it's a file and then remove it
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.remove(file_path)
+                            print(f"Deleted {file_path}")
+                        elif os.path.isdir(file_path):
+                            # Optionally remove directories as well
+                            # Use os.rmdir(file_path) for empty directories
+                            # Or use a recursive delete function if directories contain files
+                            print(f"Skipping directory {file_path}")
+                    except Exception as e:
+                        print(f"Failed to delete {file_path}. Reason: {e}")
+                os.rmdir(folder)
+
+
 records = {}
 
 def allowed_file(filename):
@@ -95,16 +144,18 @@ def get_unique_id():
     data = request.get_json()  # Parse JSON payload
     maker = data.get('maker')
     model = data.get('model')
+    print(data)
 
-    metadata_string = f"Date: {date.today()} Maker: {maker} Model: {model}"
-    print(metadata_string)  # Print maker and model
+    metadata = {"Date": str(date.today()), "Maker" : maker, "Model": model}
+    print(metadata)
 
     # Generate a unique ID - here, we use a UUID for simplicity
-    unique_id = generate_ID(6)
-    record = Record(unique_id)
+
+    record = Record()
+    unique_id = record.id
     records[unique_id] = record
     os.makedirs(record.sound_folder, exist_ok=True)
-    record.save_metadata(metadata_string)
+    record.update_metadata(metadata)
     print(f"ID generated: {unique_id}")
 
     return jsonify(unique_id)
@@ -113,74 +164,97 @@ def get_unique_id():
 def connectionOK():
     return jsonify("OK")
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    global processing_started
-    processing_started += 1
-    # Check if the post request has the file part
-    if 'file' not in request.files:
-        processing_started -= 1
-        return jsonify({"error": "No file part"}), 400
-    file = request.files.get('file')
-    button_number = int(request.form.get('button_number'))
-    ID = request.form.get('record_id').strip().strip('"')
-
+@app.route('/start_point_recording')
+def start_point_recording():
+    ID = request.args.get('record_id').strip().strip('"')
     if ID not in records:
         print("Error: referring to non-existant ID")
         return jsonify({"error": "No record created for ID"}), 400
     else:
         record = records[ID]
         print(f"Record exists, tmp folder {record.tmp_folder}")
+    pointID = record.get_pointRecordProcessId()
+    print(f"ID for the point recording issued: {pointID}")
+    return jsonify({"pointRecordId" : pointID})
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 401
+
+    file = request.files.get('file')
+    button_number = int(request.form.get('button_number'))
+    ID = request.form.get('record_id').strip().strip('"')
+    pointID = request.form.get('pointRecordId').strip().strip('"')
+
+    if ID not in records:
+        print("Error: referring to non-existant ID")
+        return jsonify({"error": "No record created for ID"}), 402
+    else:
+        record = records[ID]
+    record.requestsInProcess += 1
 
     os.makedirs(record.tmp_folder, exist_ok=True)
 
-    if button_number != record.active_point:
-        print(f"Button number mismatch, waiting for the previous cycle to conclude {button_number}, {record.active_point}")
-        while record.active_point > 0:
-            time.sleep(0.01)
-        record.active_point = button_number
+    if pointID != record.pointRecordProcessId:
+        print(f"ID should be {record.pointRecordProcessId} received {pointID}")
+        return jsonify({"error": "Wrong point record ID"}), 409
     else:
-        print(f"Continuing with button No {button_number}")
+        print(f"Continuing with button No {button_number} point record ID {pointID}")
+
 
     record_quality = '1' if record.num_chunks() > 3 else '0'
     print(f"request received ID {ID} button {button_number} response {record_quality}")
     # If the user does not select a file, the browser submits an empty file without a filename
     if file.filename == '':
-        processing_started -= 1
+
         print("error: No selected file")
-        return jsonify({"error": "No selected file"}), 400
+        return jsonify({"error": "No selected file"}), 403
     if file and allowed_file(file.filename):
         # filename = secure_filename(file.filename)
         filename = f"{ID}No{len(record.chunks)}"
         save_path = os.path.join(records[ID].tmp_folder, filename + ".wav")
         file.save(save_path)
         print("Temporary file saved")
-        extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
-        print("Features extracted")
+
+        try:
+            extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
+            print("Features extracted")
+        except Exception as er:
+            print(f"Surfboard failed, {er}")
+
         record.chunks.append(save_path)
         print(f"Chunk saved {save_path} , num_chunks {record.num_chunks()}")
         record.chunk_quality.append(record_quality)
+        record.requestsInProcess -= 1
         if record.check_sucsess():
-            processing_started -= 1
             return jsonify({"message": "Record sucsessfull", "filename": filename})
         else:
-            processing_started -= 1
             return jsonify({"message": "Continue", "filename": filename})
     else:
-        processing_started -= 1
-        return jsonify({"error": "File type not allowed"}), 400
+        record.requestsInProcess -= 1
+        return jsonify({"error": "File type not allowed"}), 404
 
 @app.route('/save_record', methods=['POST'])
 def save_record():
-    message = "Point recording completed. "
-    button_number = int(request.form.get('button_number'))
+
     ID = request.form.get('record_id').strip().strip('"')
-    print(f"\n*******************************\nSaving record to the database, ID {ID} point {button_number}")
     if ID not in records:
         return jsonify({"error": "Record not found"}), 400
     record = records[ID]
-    while processing_started > 0:
-        time.sleep(0.1)
+    record.reset_pointRecordProcessId()
+
+    message = "Point recording completed. "
+    button_number = int(request.form.get('button_number'))
+    print(f"\n****************\nSaving record to the database, ID {ID} point {button_number}")
+
+    if record.requestsInProcess > 0:
+        print(f"Waiting for {record.requestsInProcess} processes to conclude")
+        # while processing_started > 0:
+        #     time.sleep(0.1)
+        # print("All processes ready, continuing")
     if (button_number > 0):
         record.combine_wav_from_tmp(button_number)
         message += "Record saved successfully"
@@ -199,7 +273,7 @@ def get_wav_files():
 @app.route('/get_full_path_to_id/<ID>', methods=['GET'])
 def get_full_path_to_id(ID):
     # ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    record = records[ID]
+    record = records[ID.strip().strip('"')]
     http_address =  'http://' + request.host + '/show_wav_files?folderId=' + record.sound_folder
 
     img = qrcode.make(http_address)
@@ -209,28 +283,36 @@ def get_full_path_to_id(ID):
 
     # Send the bytes stream as a file response with MIME type for PNG images
     return send_file(img_byte_arr, mimetype='image/png')
-    # Importing library
-
-
-
 
 
 @app.route('/show_wav_files')
 def show_wav_files():
     folderId = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    wav_files = [f for f in os.listdir(folderId) if f.endswith('.wav')]
-    return render_template('list_wav.html', wav_files=wav_files, folderId = folderId)
+    folder = os.path.join(UPLOAD_FOLDER, folderId)
+    wav_files = [f[:-4] for f in os.listdir(folder) if f.endswith('.wav')]
+    metafile = os.path.join(folder, 'meta.json')
+    with open(metafile) as file:
+        metadata = json.load(file)
+    if "Comment" in metadata:
+        comment = metadata["Comment"]
+    date = metadata["Date"]
+    route_to_file = 'http://' + request.host + '/file_download' + '?folderId=' + folderId + '&fileName='
+    return render_template('list_wav.html',
+                           wav_files=wav_files,
+                           folderId = folderId,
+                           route_to_file = route_to_file,
+                           comment = comment,
+                           date = date)
 
 @app.route('/file_download', methods=['GET'])
 def download_file():
     folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
     fileName = request.args.get('fileName', default='default_filename').strip().strip('"') + '.wav'
-    record = records[folderId]
-    sound_folder = record.sound_folder
-    print(f"Playing {fileName} from {sound_folder}")
+    folder = os.path.join(UPLOAD_FOLDER, folderId)
+    print(f"Playing {fileName} from {folder}")
 
     try:
-        return send_from_directory(sound_folder, fileName, as_attachment=True)
+        return send_from_directory(folder, fileName, as_attachment=True)
     except FileNotFoundError:
         return "File not found", 404
 
@@ -247,6 +329,33 @@ def delete_file():
         return "File deleted", 200
     except FileNotFoundError:
         return "File not found", 404
+
+@app.route('/submit_comment', methods=['POST'])
+def submit_comment():
+    data = request.get_json()
+    ID = data.get('record_id', '').strip().strip('"')
+    comment = data.get('comment', '')
+    print(f"ID: {ID} comment: {comment}")
+    if ID not in records:
+        return jsonify({"error": "Record not found"}), 400
+    record = records[ID]
+    record.update_metadata({"Comment" : comment})
+    return jsonify({"ok": "Record saved"}), 200
+
+@app.route('/record_delete', methods=['GET'])
+def delete_record():
+    ID = request.args.get('record_id')
+    print(ID)
+    ID = ID.strip().strip('"')
+    if ID not in records:
+        return jsonify({"error": "Record not found"}), 400
+    record = records[ID]
+    record.destroy()
+    records.pop(ID)
+    return jsonify({"OK": "Record deleted successfully"}), 200
+
+
+
 
 # @app.route("/")
 # def view():

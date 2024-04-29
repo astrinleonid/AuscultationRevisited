@@ -3,21 +3,40 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WAV Files</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        ul { list-style-type: none; padding: 0; }
+        li {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        audio {
+            margin-top: 0; /* Remove top margin to align properly */
+            margin-left: 10px; /* Add some space between the filename and player */
+        }
+    </style>
 </head>
 <body>
-    <h1>WAV Files List</h1>
+    <h1>Запись {{ folderId }} от {{ date }}</h1>
+    <h2>{{ comment }}</h2>
+    {% if wav_files %}
     <ul>
         {% for file in wav_files %}
         <li>
-            {{ file }}
+            <span>{{ file }}</span> <!-- Encapsulate the filename in a span for better control -->
             <!-- HTML5 Audio Player -->
             <audio controls>
-                <source src="{{ url_for('static', filename='wav/' + file) }}" type="audio/wav">
+                <source src="{{ route_to_file + file }}" type="audio/wav">
                 Your browser does not support the audio element.
             </audio>
         </li>
         {% endfor %}
     </ul>
+    {% else %}
+    <p>No WAV files are available to display.</p>
+    {% endif %}
 </body>
 </html>

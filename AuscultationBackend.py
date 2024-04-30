@@ -307,8 +307,8 @@ def get_wav_files():
 @app.route('/get_full_path_to_id/<ID>', methods=['GET'])
 def get_full_path_to_id(ID):
     # ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    record = records[ID.strip().strip('"')]
-    http_address =  'http://' + request.host + '/show_wav_files?folderId=' + record.sound_folder
+    # record = records[ID.strip().strip('"')]
+    http_address =  'http://' + request.host + '/show_wav_files?folderId=' + ID.strip().strip('"')
 
     img = qrcode.make(http_address)
     img_byte_arr = BytesIO()
@@ -322,15 +322,16 @@ def get_full_path_to_id(ID):
 @app.route('/show_wav_files')
 def show_wav_files():
     folder = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    # folder = os.path.join(UPLOAD_FOLDER, folder)
-    wav_files = [f[:-4] for f in os.listdir(folder) if f.endswith('.wav')]
-    metafile = os.path.join(folder, 'meta.json')
+    full_path = os.path.join(UPLOAD_FOLDER, folder)
+    wav_files = [f[:-4] for f in os.listdir(full_path) if f.endswith('.wav')]
+    metafile = os.path.join(full_path, 'meta.json')
     with open(metafile) as file:
         metadata = json.load(file)
     if "Comment" in metadata:
         comment = metadata["Comment"]
     date = metadata["Date"]
     route_to_file = 'http://' + request.host + '/file_download' + '?folderId=' + folder + '&fileName='
+    print(f"Fetching files with request {route_to_file}")
     return render_template('list_wav.html',
                            wav_files=wav_files,
                            folderId = folder,

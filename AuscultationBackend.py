@@ -227,7 +227,7 @@ def upload_file():
         print(f"Continuing with button No {button_number} point record ID {pointID}")
 
 
-    record_quality = '1' if record.num_chunks() > 5 else '0'
+    record_quality = '1' if record.num_chunks() > 1 else '0'
     print(f"request received ID {ID} button {button_number} response {record_quality}")
     # If the user does not select a file, the browser submits an empty file without a filename
     if file.filename == '':

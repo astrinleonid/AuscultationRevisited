@@ -101,6 +101,7 @@ class Record:
         save_file_path = os.path.join(self.sound_folder, filename)
         self.files.append((save_file_path))
         combine_wav_files(save_file_path, files_to_combine)
+        self.update_labels({filename[:-4] : "No Label"}, method = "add")
         self.point_data_reset()
         return True
 
@@ -129,6 +130,33 @@ class Record:
         data.update(dict)
         with open(file_path, 'w') as file:
             json.dump(data, file)
+
+    def update_labels(self, dict, mode = "replace"):
+
+        file_path = f"{self.sound_folder}/labels.json"
+
+        if mode == "add":
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as file:
+                    data = json.load(file)
+            else:
+                data = {}
+
+            entries_to_pop = []
+            for entry in dict:
+                if entry in data:
+                    data[entry] = dict[entry]
+                    entries_to_pop.append(entry)
+            for entry in entries_to_pop:
+                    dict.pop(entry)
+
+            data.update(dict)
+        else:
+            data = dict
+
+        with open(file_path, 'w') as file:
+            json.dump(data, file)
+
 
     def destroy(self):
         folders = [self.tmp_folder, self.sound_folder]
@@ -364,6 +392,17 @@ def delete_file():
         return "File deleted", 200
     except FileNotFoundError:
         return "File not found", 404
+
+@app.route('/update_labels', methods=['POST'])
+def update_labels():
+
+    folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
+    print(f"Updating labels, record ID {folderId}")
+    data = request.get_json()
+    record = records[folderId]
+    record.update_labels(data)
+    return jsonify({"ok": "Labels file saved"}), 200
+
 
 @app.route('/submit_comment', methods=['POST'])
 def submit_comment():

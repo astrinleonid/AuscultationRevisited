@@ -382,6 +382,8 @@ def show_wav_files():
     wav_files = [f[:-4] for f in os.listdir(full_path) if f.endswith('.wav')]
     metafile = os.path.join(full_path, 'meta.json')
     labelfile = os.path.join(full_path, 'labels.json')
+    if not os.path.exists(labelfile):
+        create_label_file(full_path)
 
     with open(metafile) as file:
         metadata = json.load(file)
@@ -505,6 +507,14 @@ def process_file(file_path):
         return 1
     else:
         return 0
+
+def create_label_file(path):
+    wav_files = [f[:-4] for f in os.listdir(path) if f.endswith('.wav')]
+    labels = {filename : "No Label" for filename in wav_files}
+    labelfile = os.path.join(path, 'labels.json')
+    with open(labelfile, 'w') as file:
+        json.dump(labels, file)
+
 
 import random
 import string

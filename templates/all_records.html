@@ -22,6 +22,8 @@
                         <td><a href="{{ url_for('show_wav_files', folderId=record['ID'], upload_folder=upload_folder) }}">{{ record['ID'] }}</a></td>
                         <td>{{ record['Date'] }}</td>
                         <td>{{ record['Comment'] }}</td>
+                        <td>{{ record['Maker'] }}</td>
+                        <td>{{ record['Model'] }}</td>
                         <td>
                             <form action="{{ url_for('delete_record_folder', record_id=record['ID'], upload_folder=upload_folder) }}" method="POST">
                                 <button type="submit">Delete</button>

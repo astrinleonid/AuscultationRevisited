@@ -1,7 +1,9 @@
+import shutil
+
 import qrcode
 import json
 from io import BytesIO
-from flask import Flask, request, jsonify, send_from_directory, render_template, send_file
+from flask import Flask, request, jsonify, send_from_directory, render_template, send_file, redirect, url_for
 
 import re
 import os
@@ -17,7 +19,7 @@ import random
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = 'records'
 ALLOWED_EXTENSIONS = {'wav', 'mp3', '3gp', 'aac', 'flac'}
 
 processing_started = 0
@@ -189,6 +191,20 @@ class Record:
                         print(f"Failed to delete {file_path}. Reason: {e}")
                 os.rmdir(folder)
 
+def get_all_records_with_meta(upload_folder = UPLOAD_FOLDER):
+    records = []
+    folders = [item for item in os.listdir(upload_folder)]
+    for folder in folders:
+        if folder[:3] == "TMP" or folder[0] == ".":
+            continue
+        meta = os.path.join(upload_folder, folder, "meta.json")
+        with open(meta) as file:
+            metadata = json.load(file)
+        metadata["ID"] = folder
+        records.append(metadata)
+    return records
+
+print(get_all_records_with_meta(upload_folder = UPLOAD_FOLDER))
 
 records = {}
 
@@ -361,7 +377,8 @@ def get_full_path_to_id(ID):
 @app.route('/show_wav_files')
 def show_wav_files():
     folder = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    full_path = os.path.join(UPLOAD_FOLDER, folder)
+    upload_folder = request.args.get('upload_folder', UPLOAD_FOLDER)
+    full_path = os.path.join(upload_folder, folder)
     wav_files = [f[:-4] for f in os.listdir(full_path) if f.endswith('.wav')]
     metafile = os.path.join(full_path, 'meta.json')
     labelfile = os.path.join(full_path, 'labels.json')
@@ -379,6 +396,12 @@ def show_wav_files():
 
     return render_template('list_wav.html', wav_files=wav_files, folderId=folder, route_to_file=route_to_file,
                            comment=comment, date=date, labels=labels)
+
+@app.route('/show_all_records')
+def show_all_records():
+    upload_folder = request.args.get('upload_folder', UPLOAD_FOLDER)
+    records = get_all_records_with_meta(upload_folder)
+    return render_template('all_records.html', records=records, upload_folder = upload_folder)
 
 @app.route('/file_download', methods=['GET'])
 def download_file():
@@ -406,6 +429,19 @@ def delete_file():
     except FileNotFoundError:
         return "File not found", 404
 
+@app.route('/delete_record_folder', methods=['POST'])
+def delete_record_folder():
+    record_id = request.args.get('record_id')
+    upload_folder = request.args.get('upload_folder', UPLOAD_FOLDER)
+    record_path = os.path.join(upload_folder, record_id)
+
+    if os.path.exists(record_path):
+        shutil.rmtree(record_path)
+        return redirect(url_for('show_all_records', upload_folder=upload_folder))
+    else:
+        return "Record not found", 404
+
+
 @app.route('/update_labels', methods=['POST'])
 def update_labels():
 
@@ -430,7 +466,7 @@ def submit_comment():
     return jsonify({"ok": "Record saved"}), 200
 
 @app.route('/record_delete', methods=['GET'])
-def delete_record():
+def record_delete():
     ID = request.args.get('record_id')
     print(ID)
     ID = ID.strip().strip('"')
@@ -478,4 +514,4 @@ def generate_ID(seq_length):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5057, debug=True)

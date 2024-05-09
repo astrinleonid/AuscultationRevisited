@@ -101,7 +101,7 @@ class Record:
         save_file_path = os.path.join(self.sound_folder, filename)
         self.files.append((save_file_path))
         combine_wav_files(save_file_path, files_to_combine)
-        self.update_labels({filename[:-4] : "No Label"}, method = "add")
+        self.update_labels({filename[:-4] : "No Label"}, mode = "add")
         self.point_data_reset()
         return True
 
@@ -130,6 +130,16 @@ class Record:
         data.update(dict)
         with open(file_path, 'w') as file:
             json.dump(data, file)
+
+    def get_labels(self):
+
+        file_path = f"{self.sound_folder}/labels.json"
+        if os.path.exists(file_path):
+                with open(file_path, 'r') as file:
+                    data = json.load(file)
+                return data
+        else:
+            return False
 
     def update_labels(self, dict, mode = "replace"):
 
@@ -329,8 +339,9 @@ def get_wav_files():
     ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
     record = records[ID]
     sound_folder = record.sound_folder
-    files = " ".join([f[:-4] for f in os.listdir(sound_folder) if f[-3:] == 'wav'])
-    return(files)
+    file_names = " ".join([f[:-4] for f in os.listdir(sound_folder) if f[-3:] == 'wav'])
+    file_labels = record.get_labels()
+    return jsonify({'files': file_names, 'labels': file_labels})
 
 @app.route('/get_full_path_to_id/<ID>', methods=['GET'])
 def get_full_path_to_id(ID):
@@ -353,19 +364,21 @@ def show_wav_files():
     full_path = os.path.join(UPLOAD_FOLDER, folder)
     wav_files = [f[:-4] for f in os.listdir(full_path) if f.endswith('.wav')]
     metafile = os.path.join(full_path, 'meta.json')
+    labelfile = os.path.join(full_path, 'labels.json')
+
     with open(metafile) as file:
         metadata = json.load(file)
-    if "Comment" in metadata:
-        comment = metadata["Comment"]
-    date = metadata["Date"]
+        comment = metadata.get("Comment", "")
+        date = metadata.get("Date", "")
+
+    with open(labelfile) as file:
+        labels = json.load(file)
+
     route_to_file = 'http://' + request.host + '/file_download' + '?folderId=' + folder + '&fileName='
     print(f"Fetching files with request {route_to_file}")
-    return render_template('list_wav.html',
-                           wav_files=wav_files,
-                           folderId = folder,
-                           route_to_file = route_to_file,
-                           comment = comment,
-                           date = date)
+
+    return render_template('list_wav.html', wav_files=wav_files, folderId=folder, route_to_file=route_to_file,
+                           comment=comment, date=date, labels=labels)
 
 @app.route('/file_download', methods=['GET'])
 def download_file():

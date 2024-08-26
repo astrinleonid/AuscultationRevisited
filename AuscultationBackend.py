@@ -21,6 +21,7 @@ app = Flask(__name__)
 
 UPLOAD_FOLDER = 'records'
 ALLOWED_EXTENSIONS = {'wav', 'mp3', '3gp', 'aac', 'flac'}
+SETUP_TIME_ALLOWANCE = 0
 extract_features_flag = True
 
 processing_started = 0
@@ -213,8 +214,9 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/extract_features_off', methods=['POST'])  # Change to POST to accept data
+@app.route('/extract_features_off', methods=['GET'])  # Change to POST to accept data
 def extract_features_off():
+    global extract_features_flag
     extract_features_flag = False
     print("Feature extracting turned off")
     return jsonify("OK")
@@ -288,7 +290,7 @@ def upload_file():
         print(f"Continuing with button No {button_number} point record ID {pointID}")
 
 
-    record_quality = '1' if record.num_chunks() > 1 else '0'
+    record_quality = '1' if record.num_chunks() >= SETUP_TIME_ALLOWANCE else '0'
     print(f"request received ID {ID} button {button_number} response {record_quality}")
     # If the user does not select a file, the browser submits an empty file without a filename
     if file.filename == '':
@@ -302,16 +304,14 @@ def upload_file():
         file.save(save_path)
         print("Temporary file saved")
 
-
         #******* Surfboard feature extraction *******
         if extract_features_flag:
+            print("Extracting features with surfboard")
             try:
                 extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
                 print("Features extracted")
             except Exception as er:
                 print(f"Surfboard failed, {er}")
-
-
 
         record.chunks.append(save_path)
         print(f"Chunk saved {save_path} , num_chunks {record.num_chunks()}")

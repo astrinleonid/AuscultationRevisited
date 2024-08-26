@@ -21,6 +21,7 @@ app = Flask(__name__)
 
 UPLOAD_FOLDER = 'records'
 ALLOWED_EXTENSIONS = {'wav', 'mp3', '3gp', 'aac', 'flac'}
+extract_features_flag = True
 
 processing_started = 0
 
@@ -212,6 +213,12 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+@app.route('/extract_features_off', methods=['POST'])  # Change to POST to accept data
+def extract_features_off():
+    extract_features_flag = False
+    print("Feature extracting turned off")
+    return jsonify("OK")
+
 
 @app.route('/getUniqueId', methods=['POST'])  # Change to POST to accept data
 def get_unique_id():
@@ -295,11 +302,16 @@ def upload_file():
         file.save(save_path)
         print("Temporary file saved")
 
-        try:
-            extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
-            print("Features extracted")
-        except Exception as er:
-            print(f"Surfboard failed, {er}")
+
+        #******* Surfboard feature extraction *******
+        if extract_features_flag:
+            try:
+                extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
+                print("Features extracted")
+            except Exception as er:
+                print(f"Surfboard failed, {er}")
+
+
 
         record.chunks.append(save_path)
         print(f"Chunk saved {save_path} , num_chunks {record.num_chunks()}")

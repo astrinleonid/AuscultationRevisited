@@ -34,8 +34,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 class Record:
 
-    def __init__(self, save_folder = UPLOAD_FOLDER, model = '', brand = ''):
-        self.id = generate_ID(8)
+    def __init__(self, id, save_folder = UPLOAD_FOLDER, model = '', brand = ''):
+        self.id = id
         self.chunks = []
         self.chunk_quality = []
         self.successful = False
@@ -107,7 +107,7 @@ class Record:
         combine_wav_files(save_file_path, files_to_combine)
         self.update_labels({filename[:-4] : "No Label"}, mode = "add")
         self.point_data_reset()
-        return True
+        return filename
 
     def save_metadata(self, string):
         file_path = f"{self.sound_folder}/meta.txt"
@@ -222,28 +222,56 @@ def extract_features_off():
     return jsonify("OK")
 
 
-@app.route('/getUniqueId', methods=['POST'])  # Change to POST to accept data
+@app.route('/getUniqueId', methods=['POST'])
 def get_unique_id():
-    # Extract maker and model from the posted data
-    data = request.get_json()  # Parse JSON payload
-    maker = data.get('maker')
-    model = data.get('model')
-    print(data)
-    metadata = {"Date": str(date.today()), "Maker" : maker, "Model": model, "Comment": ""}
-    print(metadata)
+    try:
+        # Parse request data
+        data = request.get_json()
 
-    # Generate a unique ID - here, we use a UUID for simplicity
+        # Extract ID sent from the device
+        unique_id = data.get('id')
+        if not unique_id:
+            return jsonify({"error": "No ID provided in request"}), 400
 
-    record = Record()
-    record.numChunksRequired = int(request.args.get("numChunks"))
-    print(f"Required length of good record set to {record.numChunksRequired}")
-    unique_id = record.id
-    records[unique_id] = record
-    os.makedirs(record.sound_folder, exist_ok=True)
-    record.update_metadata(metadata)
-    print(f"ID generated: {unique_id}")
+        # Extract device information
+        maker = data.get('maker', 'Unknown')
+        model = data.get('model', 'Unknown')
+        device_id = data.get('deviceId', 'Unknown')
 
-    return jsonify(unique_id)
+        # Get the number of chunks from query params
+        num_chunks = int(request.args.get("numChunks", 10))
+
+        # Log the received information
+        print(f"Received ID registration: {unique_id}")
+        print(f"Device info - Maker: {maker}, Model: {model}, DeviceID: {device_id}")
+
+        # Create metadata for the record
+        metadata = {
+            "Date": str(date.today()),
+            "Maker": maker,
+            "Model": model,
+            "DeviceID": device_id,
+            "Comment": ""
+        }
+
+        # Create and initialize the record with the client-provided ID
+        record = Record(unique_id)  # Use the ID from the client instead of generating one
+        record.numChunksRequired = num_chunks
+        print(f"Required length of good record set to {record.numChunksRequired}")
+
+        # Store the record and create necessary directories
+        records[unique_id] = record
+        os.makedirs(record.sound_folder, exist_ok=True)
+        record.update_metadata(metadata)
+
+        print(f"Registered client ID: {unique_id}")
+
+        # Return the same ID back to confirm registration
+        return jsonify(unique_id)
+
+    except Exception as e:
+        print(f"Error in get_unique_id: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/checkConnection', methods=['GET'])  # Change to POST to accept data
 def connectionOK():
@@ -308,7 +336,7 @@ def upload_file():
         if extract_features_flag:
             print("Extracting features with surfboard")
             try:
-                extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
+                # extact_features_from_file(os.path.join(records[ID].tmp_folder, filename))
                 print("Features extracted")
             except Exception as er:
                 print(f"Surfboard failed, {er}")
@@ -317,10 +345,9 @@ def upload_file():
         print(f"Chunk saved {save_path} , num_chunks {record.num_chunks()}")
         record.chunk_quality.append(record_quality)
         record.requestsInProcess -= 1
-        if record.check_sucsess():
-            return jsonify({"message": "Record sucsessfull", "filename": filename})
-        else:
-            return jsonify({"message": "Continue", "filename": filename})
+        response_message = "Record sucsessfull" if record.check_sucsess() else "Continue"
+        print(f"Returning response {response_message}")
+        return jsonify({"message": response_message, "filename": filename})
     else:
         record.requestsInProcess -= 1
         return jsonify({"error": "File type not allowed"}), 404
@@ -334,6 +361,7 @@ def save_record():
     record = records[ID]
     record.reset_pointRecordProcessId()
     result = request.form.get('result').strip().strip('"')
+    filename = ""
     print(f"\n****************\nSaving request result {result}")
     if result == "success":
         message = "Point recording completed. "
@@ -344,7 +372,9 @@ def save_record():
             return jsonify(message), 200
         if (button_number > 0):
             record.processing_tmp_files = True
-            if record.combine_wav_from_tmp(button_number):
+            filename = record.combine_wav_from_tmp(button_number)
+            if filename:
+                filename = filename.split('.')[0]
                 record.recordState[button_number - 1] = True
                 message += "Record saved successfully"
             else:
@@ -359,7 +389,7 @@ def save_record():
         message = "Record unsuccessfull"
     record.point_data_reset()
     print(f"Recording activity completed with the result {message}")
-    return jsonify({"message": message}), 200
+    return jsonify({"message": message, "filename": filename}), 200
 
 
 @app.route('/get_wav_files', methods=['GET'])

@@ -473,7 +473,7 @@ def delete_file():
     except FileNotFoundError:
         return "File not found", 404
 
-@app.route('/delete_record_folder', methods=['POST'])
+@app.route('/delete_record_folder', methods=['GET', 'POST'])
 def delete_record_folder():
     record_id = request.args.get('record_id')
     upload_folder = request.args.get('upload_folder', UPLOAD_FOLDER)
@@ -489,11 +489,14 @@ def delete_record_folder():
 @app.route('/update_labels', methods=['POST'])
 def update_labels():
 
-    folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
-    print(f"Updating labels, record ID {folderId}")
+    folderId = request.args.get('folderId', default="").strip().strip('"')
     data = request.get_json()
+    print(f"Updating labels, record ID {folderId}")
+    print(f"Labels: {data}")
+    if folderId not in records:
+        return jsonify({"Error": f"Folder {folderId} not found"}), 415
     record = records[folderId]
-    record.update_labels(data)
+    record.update_labels(data, "add")
     return jsonify({"ok": "Labels file saved"}), 200
 
 

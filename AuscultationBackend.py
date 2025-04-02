@@ -290,6 +290,26 @@ def start_point_recording():
     print(f"ID for the point recording issued: {pointID}")
     return jsonify({"pointRecordId" : pointID})
 
+@app.route('/upload_file', methods=['POST'])
+def upload_recorded_file():
+
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 401
+
+    file = request.files.get('file')
+    button_number = int(request.form.get('button_number'))
+    ID = request.form.get('record_id').strip().strip('"')
+    pointID = request.form.get('pointRecordId').strip().strip('"')
+    print(f"Save request received ID {ID} button {button_number} pointID {pointID}")
+    if file and allowed_file(file.filename):
+        # filename = secure_filename(file.filename)
+        filename = f"{pointID}{button_number}"
+        save_path = os.path.join(records[ID].sound_folder, filename + ".wav")
+        file.save(save_path)
+        print("File saved")
+    return jsonify({"message" : "OK"}), 200
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
 

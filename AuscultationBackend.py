@@ -57,7 +57,11 @@ class Record:
         for filename in os.listdir(self.sound_folder):
             match = re.search(r"(\d+)\.wav$", filename)
             if match:
-                self.recordState[int(match.group(1)) - 1] = True # Returns the point number as an integer
+                pointNo = int(match.group(1))
+                recordStateIndex =  pointNo - 1
+                if recordStateIndex not in list(range(len(self.recordState))):
+                    raise Warning(f"Point number extracted is {pointNo }, value should ")
+                self.recordState[recordStateIndex] = True # Returns the point number as an integer
         return self.recordState
 
     def get_pointRecordProcessId(self):
@@ -90,12 +94,13 @@ class Record:
         crit = "".join(['1' for i in range(self.numChunksRequired)])
         self.successful = crit in self.quality_string()
         return self.successful
+
     def combine_wav_from_tmp(self, point_number):
         subs_len = self.num_chunks()
         while self.get_good_subseq_ind(subs_len)[0] < 0:
             subs_len -= 1
         start, end = self.get_good_subseq_ind(subs_len)
-        files_to_combine = self.chunks[start : end]
+        files_to_combine = self.chunks[start: end]
         for tmpFile in files_to_combine:
             if tmpFile.split('/')[-1] not in os.listdir(self.tmp_folder):
                 self.point_data_reset()
@@ -105,7 +110,10 @@ class Record:
         save_file_path = os.path.join(self.sound_folder, filename)
         self.files.append((save_file_path))
         combine_wav_files(save_file_path, files_to_combine)
-        self.update_labels({filename[:-4] : "No Label"}, mode = "add")
+
+        # Update using point number as the key
+        self.update_labels({str(point_number): "No Label"}, mode="add")
+
         self.point_data_reset()
         return filename
 
@@ -145,8 +153,7 @@ class Record:
         else:
             return False
 
-    def update_labels(self, dict, mode = "replace"):
-
+    def update_labels(self, dict, mode="replace"):
         file_path = f"{self.sound_folder}/labels.json"
 
         if mode == "add":
@@ -162,7 +169,7 @@ class Record:
                     data[entry] = dict[entry]
                     entries_to_pop.append(entry)
             for entry in entries_to_pop:
-                    dict.pop(entry)
+                dict.pop(entry)
 
             data.update(dict)
         else:
@@ -208,7 +215,7 @@ def get_all_records_with_meta(upload_folder = UPLOAD_FOLDER):
 
 print(get_all_records_with_meta(upload_folder = UPLOAD_FOLDER))
 
-records = {}
+record_dict = {}
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -260,7 +267,7 @@ def get_unique_id():
         print(f"Required length of good record set to {record.numChunksRequired}")
 
         # Store the record and create necessary directories
-        records[unique_id] = record
+        record_dict[unique_id] = record
         os.makedirs(record.sound_folder, exist_ok=True)
         record.update_metadata(metadata)
 
@@ -280,11 +287,11 @@ def connectionOK():
 @app.route('/start_point_recording')
 def start_point_recording():
     ID = request.args.get('record_id').strip().strip('"')
-    if ID not in records:
+    if ID not in record_dict:
         print("Error: referring to non-existant ID")
         return jsonify({"error": "No record created for ID"}), 400
     else:
-        record = records[ID]
+        record = record_dict[ID]
         print(f"Record exists, tmp folder {record.tmp_folder}")
     pointID = record.get_pointRecordProcessId()
     print(f"ID for the point recording issued: {pointID}")
@@ -305,7 +312,7 @@ def upload_recorded_file():
     if file and allowed_file(file.filename):
         # filename = secure_filename(file.filename)
         filename = f"{pointID}{button_number}"
-        save_path = os.path.join(records[ID].sound_folder, filename + ".wav")
+        save_path = os.path.join(record_dict[ID].sound_folder, filename + ".wav")
         file.save(save_path)
         print("File saved")
     return jsonify({"message" : "OK"}), 200
@@ -322,11 +329,11 @@ def upload_file():
     ID = request.form.get('record_id').strip().strip('"')
     pointID = request.form.get('pointRecordId').strip().strip('"')
 
-    if ID not in records:
+    if ID not in record_dict:
         print("Error: referring to non-existant ID")
         return jsonify({"error": "No record created for ID"}), 402
     else:
-        record = records[ID]
+        record = record_dict[ID]
     record.requestsInProcess += 1
 
     os.makedirs(record.tmp_folder, exist_ok=True)
@@ -348,7 +355,7 @@ def upload_file():
     if file and allowed_file(file.filename):
         # filename = secure_filename(file.filename)
         filename = f"{ID}No{len(record.chunks)}"
-        save_path = os.path.join(records[ID].tmp_folder, filename + ".wav")
+        save_path = os.path.join(record_dict[ID].tmp_folder, filename + ".wav")
         file.save(save_path)
         print("Temporary file saved")
 
@@ -376,9 +383,9 @@ def upload_file():
 def save_record():
     message = "Undefined"
     ID = request.form.get('record_id').strip().strip('"')
-    if ID not in records:
+    if ID not in record_dict:
         return jsonify({"error": "Record not found"}), 400
-    record = records[ID]
+    record = record_dict[ID]
     record.reset_pointRecordProcessId()
     result = request.form.get('result').strip().strip('"')
     filename = ""
@@ -415,10 +422,16 @@ def save_record():
 @app.route('/get_wav_files', methods=['GET'])
 def get_wav_files():
     ID = request.args.get('folderId', default='default_folder', type=str).strip().strip('"')
-    record = records[ID]
+    record = record_dict[ID]
     sound_folder = record.sound_folder
-    file_names = " ".join([f[:-4] for f in os.listdir(sound_folder) if f[-3:] == 'wav'])
+
+    # Get files
+    files = [f for f in os.listdir(sound_folder) if f.endswith('.wav')]
+    file_names = " ".join([f[:-4] for f in files])
+
+    # Get labels
     file_labels = record.get_labels()
+
     return jsonify({'files': file_names, 'labels': file_labels})
 
 @app.route('/get_full_path_to_id/<ID>', methods=['GET'])
@@ -461,11 +474,48 @@ def show_wav_files():
     return render_template('list_wav.html', wav_files=wav_files, folderId=folder, route_to_file=route_to_file,
                            comment=comment, date=date, labels=labels)
 
+
 @app.route('/show_all_records')
 def show_all_records():
     upload_folder = request.args.get('upload_folder', UPLOAD_FOLDER)
-    records = get_all_records_with_meta(upload_folder)
-    return render_template('all_records.html', records=records, upload_folder = upload_folder)
+    records_data = get_all_records_with_meta(upload_folder)
+
+    # Add recording state and label information to each record
+    for record_data in records_data:
+        record_id = record_data['ID']
+        record_folder = os.path.join(upload_folder, record_id)
+
+        # Get recording state by examining the .wav files directly
+        record_data['recordState'] = [False] * 10  # Initialize with 10 false values
+
+        # Get labels from the label file
+        label_file = os.path.join(record_folder, 'labels.json')
+        if os.path.exists(label_file):
+            with open(label_file, 'r') as f:
+                try:
+                    labels = json.load(f)
+                    record_data['labels'] = labels
+                    print(f"Labels for {record_id}: {labels}")
+                except json.JSONDecodeError:
+                    print(f"Error reading labels file for {record_id}")
+                    record_data['labels'] = {}
+        else:
+            record_data['labels'] = {}
+
+        # Get recording state by scanning the wav files
+        try:
+            for filename in os.listdir(record_folder):
+                if filename.endswith('.wav'):
+                    match = re.search(r"(\d+)\.wav$", filename)
+                    if match:
+                        point_num = int(match.group(1))
+                        if 1 <= point_num <= len(record_data['recordState']):
+                            record_data['recordState'][point_num - 1] = True
+        except Exception as e:
+            print(f"Error reading wav files for {record_id}: {e}")
+
+    print(f"Record data formed: {records_data}, upload folder {upload_folder}")
+    return render_template('all_records.html', records=records_data, upload_folder=upload_folder)
 
 @app.route('/file_download', methods=['GET'])
 def download_file():
@@ -483,7 +533,7 @@ def download_file():
 def delete_file():
     folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
     fileName = request.args.get('fileName', default='default_filename').strip().strip('"') + '.wav'
-    record = records[folderId]
+    record = record_dict[folderId]
     sound_folder = record.sound_folder
     print(f"Deleting {fileName} from {sound_folder}")
 
@@ -508,15 +558,43 @@ def delete_record_folder():
 
 @app.route('/update_labels', methods=['POST'])
 def update_labels():
-
     folderId = request.args.get('folderId', default="").strip().strip('"')
     data = request.get_json()
     print(f"Updating labels, record ID {folderId}")
     print(f"Labels: {data}")
-    if folderId not in records:
+
+    if folderId not in record_dict:
         return jsonify({"Error": f"Folder {folderId} not found"}), 415
-    record = records[folderId]
-    record.update_labels(data, "add")
+
+    record = record_dict[folderId]
+
+    # Convert filename-based labels to point-number-based labels
+    point_labels = {}
+    for filename, label in data.items():
+        # First, strip extension if it exists
+        base_filename = filename.rsplit('.', 1)[0] if '.' in filename else filename
+
+        # Try to find the point number at the end of the filename
+        match = re.search(r"(\d+)$", base_filename)
+        if match:
+            point_number = match.group(1)
+            point_labels[point_number] = label
+        else:
+            # Try alternative pattern for offline filenames
+            match = re.search(r"point_(\d+)_", filename)
+            if match:
+                point_number = match.group(1)
+                point_labels[point_number] = label
+            else:
+                # Last resort - any digits in the filename
+                match = re.search(r"(\d+)", filename)
+                if match:
+                    point_number = match.group(1)
+                    point_labels[point_number] = label
+                else:
+                    print(f"Warning: Could not extract point number from filename: {filename}")
+
+    record.update_labels(point_labels, "add")
     return jsonify({"ok": "Labels file saved"}), 200
 
 
@@ -526,9 +604,9 @@ def submit_comment():
     ID = data.get('record_id', '').strip().strip('"')
     comment = data.get('comment', '')
     print(f"ID: {ID} comment: {comment}")
-    if ID not in records:
+    if ID not in record_dict:
         return jsonify({"error": "Record not found"}), 400
-    record = records[ID]
+    record = record_dict[ID]
     record.update_metadata({"Comment" : comment})
     return jsonify({"ok": "Record saved"}), 200
 
@@ -537,11 +615,11 @@ def record_delete():
     ID = request.args.get('record_id')
     print(ID)
     ID = ID.strip().strip('"')
-    if ID not in records:
+    if ID not in record_dict:
         return jsonify({"error": "Record not found"}), 400
-    record = records[ID]
+    record = record_dict[ID]
     record.destroy()
-    records.pop(ID)
+    record_dict.pop(ID)
     return jsonify({"OK": "Record deleted successfully"}), 200
 
 @app.route('/get_button_states')
@@ -549,12 +627,22 @@ def get_button_colors():
     ID = request.args.get('record_id')
     print(ID)
     ID = ID.strip().strip('"')
-    if ID not in records:
+    if ID not in record_dict:
         return jsonify({"error": "Record not found"}), 400
-    record = records[ID]
+    record = record_dict[ID]
     return jsonify(record.get_recorded_point_numbers())
 
+import re
 
+# Register custom Jinja2 filters
+@app.template_filter('regex_extract')
+def regex_extract_filter(s, pattern):
+    """Extract the first group from a regex match"""
+    match = re.search(pattern, s)
+    if match:
+        # Return the first capturing group or the entire match if no groups
+        return match.group(1) if len(match.groups()) > 0 else match.group(0)
+    return ""
 
 
 # @app.route("/")
@@ -573,9 +661,18 @@ def process_file(file_path):
     else:
         return 0
 
+
 def create_label_file(path):
-    wav_files = [f[:-4] for f in os.listdir(path) if f.endswith('.wav')]
-    labels = {filename : "No Label" for filename in wav_files}
+    wav_files = [f for f in os.listdir(path) if f.endswith('.wav')]
+
+    # Initialize labels dictionary with point numbers as keys
+    labels = {}
+    for filename in wav_files:
+        match = re.search(r"(\d+)\.wav$", filename)
+        if match:
+            point_number = match.group(1)
+            labels[point_number] = "No Label"
+
     labelfile = os.path.join(path, 'labels.json')
     with open(labelfile, 'w') as file:
         json.dump(labels, file)

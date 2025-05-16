@@ -95,7 +95,7 @@ class Record:
         self.successful = crit in self.quality_string()
         return self.successful
 
-    def combine_wav_from_tmp(self, point_number):
+    def combine_wav_from_tmp(self, point_number, filename):
         subs_len = self.num_chunks()
         while self.get_good_subseq_ind(subs_len)[0] < 0:
             subs_len -= 1
@@ -106,7 +106,7 @@ class Record:
                 self.point_data_reset()
                 print(f"ERROR: file not found in the directory {tmpFile.split('/')[-1]}")
                 return False
-        filename = self.get_filename(point_number)
+        # filename = self.get_filename(point_number)
         save_file_path = os.path.join(self.sound_folder, filename)
         self.files.append((save_file_path))
         combine_wav_files(save_file_path, files_to_combine)
@@ -240,6 +240,12 @@ def get_unique_id():
         if not unique_id:
             return jsonify({"error": "No ID provided in request"}), 400
 
+        records_data = get_all_records_with_meta(UPLOAD_FOLDER)
+        if unique_id in [record_data['ID'] for record_data in records_data]:
+            print(f"\nID is already on the server: {unique_id}")
+            # Return the same ID back
+            return jsonify(unique_id)
+
         # Extract device information
         maker = data.get('maker', 'Unknown')
         model = data.get('model', 'Unknown')
@@ -306,13 +312,14 @@ def upload_recorded_file():
 
     file = request.files.get('file')
     button_number = int(request.form.get('button_number'))
+    filename = request.form.get('fileName')
     ID = request.form.get('record_id').strip().strip('"')
     pointID = request.form.get('pointRecordId').strip().strip('"')
     print(f"Save request received ID {ID} button {button_number} pointID {pointID}")
     if file and allowed_file(file.filename):
         # filename = secure_filename(file.filename)
-        filename = f"{pointID}{button_number}"
-        save_path = os.path.join(record_dict[ID].sound_folder, filename + ".wav")
+        # filename = f"{pointID}{button_number}"
+        save_path = os.path.join(record_dict[ID].sound_folder, filename)
         file.save(save_path)
         print("File saved")
     return jsonify({"message" : "OK"}), 200
@@ -388,8 +395,8 @@ def save_record():
     record = record_dict[ID]
     record.reset_pointRecordProcessId()
     result = request.form.get('result').strip().strip('"')
-    filename = ""
-    print(f"\n****************\nSaving request result {result}")
+    filename = request.form.get('filename').strip().strip('"')
+    print(f"\n****************\nSaving request result {result} filename {filename}")
     if result == "success":
         message = "Point recording completed. "
         button_number = int(request.form.get('button_number'))
@@ -399,11 +406,11 @@ def save_record():
             return jsonify(message), 200
         if (button_number > 0):
             record.processing_tmp_files = True
-            filename = record.combine_wav_from_tmp(button_number)
-            if filename:
+            res = record.combine_wav_from_tmp(button_number, filename)
+            if res:
                 filename = filename.split('.')[0]
                 record.recordState[button_number - 1] = True
-                message += "Record saved successfully"
+                message += f"Record saved successfully file name {filename}"
             else:
                 print("Failed to save record")
                 message += "Failed to save"
@@ -520,7 +527,7 @@ def show_all_records():
 @app.route('/file_download', methods=['GET'])
 def download_file():
     folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
-    fileName = request.args.get('fileName', default='default_filename').strip().strip('"') + '.wav'
+    fileName = request.args.get('fileName', default='default_filename').strip().strip('"')
     folder = os.path.join(UPLOAD_FOLDER, folderId)
     print(f"Playing {fileName} from {folder}")
 
@@ -532,7 +539,7 @@ def download_file():
 @app.route('/file_delete', methods=['GET'])
 def delete_file():
     folderId = request.args.get('folderId', default='default_folder').strip().strip('"')
-    fileName = request.args.get('fileName', default='default_filename').strip().strip('"') + '.wav'
+    fileName = request.args.get('fileName', default='default_filename').strip().strip('"')
     record = record_dict[folderId]
     sound_folder = record.sound_folder
     print(f"Deleting {fileName} from {sound_folder}")
@@ -687,3 +694,4 @@ def generate_ID(seq_length):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5057, debug=True)
+

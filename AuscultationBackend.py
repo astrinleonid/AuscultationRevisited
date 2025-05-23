@@ -15,6 +15,8 @@ from sound_processing import combine_wav_files
 from clear_folder import clear_folder
 from extract_features import extact_features_from_file
 
+from datetime import datetime
+
 import random
 
 app = Flask(__name__)
@@ -651,10 +653,70 @@ def regex_extract_filter(s, pattern):
         return match.group(1) if len(match.groups()) > 0 else match.group(0)
     return ""
 
+##### APK download routes
+APK_FOLDER = 'android'
+def get_file_info(filepath):
+    """Get file information including size and modification date"""
+    stat = os.stat(filepath)
+    size_mb = round(stat.st_size / (1024 * 1024), 2)
+    mod_time = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
+    return {
+        'size_mb': size_mb,
+        'modified': mod_time
+    }
+@app.route('/download_application')
+def download_application():
+    """Main page showing all available APK files"""
+    apk_files = []
+    # Get all APK files in the folder
+    if os.path.exists(APK_FOLDER):
+        for filename in os.listdir(APK_FOLDER):
+            if filename.lower().endswith('.apk'):
+                filepath = os.path.join(APK_FOLDER, filename)
+                file_info = get_file_info(filepath)
+                apk_files.append({
+                    'name': filename,
+                    'size_mb': file_info['size_mb'],
+                    'modified': file_info['modified']
+                })
 
-# @app.route("/")
-# def view():
-#     return request.host, 200
+    # Sort by modification date (newest first)
+    apk_files.sort(key=lambda x: x['modified'], reverse=True)
+
+    return render_template('app_APK.html', apk_files=apk_files)
+@app.route('/download_apk/<filename>')
+def download_apk(filename):
+    """Download APK file"""
+    # Security check - only allow APK files
+    if not filename.lower().endswith('.apk'):
+        return jsonify({"error": "File not found"}), 404
+
+    filepath = os.path.join(APK_FOLDER, filename)
+
+    # Check if file exists
+    if not os.path.exists(filepath):
+        return jsonify({"error": "File not found"}), 404
+
+    # Set proper MIME type for APK
+    return send_file(
+        filepath,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.android.package-archive'
+    )
+@app.route('/info/<filename>')
+def file_info(filename):
+    """Get detailed info about an APK file"""
+    if not filename.lower().endswith('.apk'):
+        return jsonify({"error": "File not found"}), 404
+
+    filepath = os.path.join(APK_FOLDER, filename)
+
+    if not os.path.exists(filepath):
+        return jsonify({"error": "File not found"}), 404
+
+    info = get_file_info(filepath)
+    return render_template('file_info.html', filename=filename, info=info)
 
 
 def process_file(file_path):
